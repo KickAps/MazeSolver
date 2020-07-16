@@ -23,16 +23,11 @@ class Node:
         self.parent = (0, 0)
         self.status = Status.UNVISITED
 
-    def set_g_cost(self, p_g_cost):
-        self.g_cost = p_g_cost
-        self.update_f_cost()
-
-    def set_h_cost(self, p_h_cost):
-        self.h_cost = p_h_cost
-        self.update_f_cost()
-
     def update_f_cost(self):
         self.f_cost = self.g_cost + self.h_cost
+
+    def print_node(self):
+        print(self.coordinates, self.g_cost, self.h_cost, self.f_cost, self.parent, self.status)
 
 
 def maze_file_to_array(p_maze_file):
@@ -82,6 +77,26 @@ def init_maze(p_maze):
     return [r_nodes, r_start, r_end]
 
 
+def get_final_path(p_maze_info):
+    """
+    Give the final path
+
+    :param p_maze_info: The maze information
+
+    :return: The list of coordinates of the final path
+    """
+
+    nodes, start, end = p_maze_info
+    current_pos = end
+    final_path = []
+
+    while current_pos != start:
+        current_pos = nodes[current_pos].parent
+        final_path.append(current_pos)
+
+    return final_path
+
+
 def print_solved_maze(p_maze, p_maze_info):
     """
     Print the solved maze
@@ -96,15 +111,13 @@ def print_solved_maze(p_maze, p_maze_info):
 
     for y, line in enumerate(p_maze):
         for x, number in enumerate(line):
-            tmp = str(number) + " "
+            tmp = "X " if number == 1 else "  "
             if (x, y) == start:
                 tmp = "S "
             elif (x, y) == end:
                 tmp = "E "
-            else:
-                for coord in visited_nodes:
-                    if (x, y) == nodes[coord].coordinates:
-                        tmp = "X "
+            elif (x, y) in get_final_path(p_maze_info):
+                tmp = "o "
 
             maze_string += tmp
         maze_string += '\n'
@@ -150,11 +163,32 @@ def get_nodes_by_status(nodes, status):
         # Status filter
         if node.status == status:
             filtered_nodes.append(node.coordinates)
-            
+
     return filtered_nodes
 
 
+def get_nodes_distance(coord_1, coord_2):
+    """
+    Give the distance between two points
+
+    :param coord_1: First point coordinates
+    :param coord_2: Second point coordinates
+
+    :return: The distance
+    """
+
+    return abs(coord_1[0] - coord_2[0]) + abs(coord_1[1] - coord_2[1])
+
+
 def solve_maze(current_pos, p_maze, maze_info):
+    """
+    Solve the maze recursively
+
+    :param current_pos: The current coordinates
+    :param p_maze: The maze
+    :param maze_info: The maze information
+    """
+
     nodes, start, end = maze_info
     # If first occurrence
     if current_pos == 0:
@@ -170,24 +204,43 @@ def solve_maze(current_pos, p_maze, maze_info):
 
     current_node = nodes[current_pos]
     next_node = -1
+    do_next = False
     current_node.status = Status.VISITED
-
-    print(current_node.coordinates)
-    print(current_node.parent)
 
     # Loop on neighboring nodes
     for coord in get_neighbors(nodes, current_node):
-        nodes[coord].status = Status.CHECKED
-        nodes[coord].parent = current_node.coordinates
+        node = nodes[coord]
+        node.status = Status.CHECKED
 
-    print(get_nodes_by_status(nodes, Status.VISITED))
+        tmp_cost = get_nodes_distance(node.coordinates, start)
+        if node.g_cost > tmp_cost:
+            node.g_cost = tmp_cost
+            node.parent = current_node.coordinates
+
+        tmp_cost = get_nodes_distance(node.coordinates, end)
+        if node.h_cost > tmp_cost:
+            node.h_cost = tmp_cost
+
+        # Update the f cost of the node
+        node.update_f_cost()
 
     # Choose the next node
+    max_f_cost = math.inf
     for coord in get_nodes_by_status(nodes, Status.CHECKED):
-        next_node = coord
+        node = nodes[coord]
+        if node.f_cost < max_f_cost:
+            do_next = True
+        elif node.f_cost == max_f_cost and node.h_cost < next_node.h_cost:
+            do_next = True
+        elif node.f_cost == max_f_cost and node.h_cost == next_node.h_cost and node.g_cost < next_node.g_cost:
+            do_next = True
 
-    print(" ")
-    solve_maze(next_node, p_maze, maze_info)
+        if do_next:
+            max_f_cost = node.f_cost
+            next_node = node
+
+    # Recursive call
+    solve_maze(next_node.coordinates, p_maze, maze_info)
 
 
 def main():
@@ -201,6 +254,9 @@ def main():
 
     print(maze_file.read())
     maze_file.seek(0)
+
+    # Needed for large maze
+    # sys.setrecursionlimit(10000)
 
     maze = maze_file_to_array(maze_file)
     solve_maze(0, maze, init_maze(maze))
