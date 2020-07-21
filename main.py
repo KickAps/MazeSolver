@@ -2,12 +2,22 @@ import sys
 import os
 from enum import Enum
 import math
+import pygame
+from pygame.locals import *
 
 
 class Status(Enum):
     UNVISITED = 0
     VISITED = 1
     CHECKED = 2
+
+
+class Maze:
+    def __init__(self, nodes, start, end):
+        self.nodes = nodes
+        self.solution = []
+        self.start = start
+        self.end = end
 
 
 class Node:
@@ -74,55 +84,28 @@ def init_maze(p_maze):
                 # Instantiate nodes from coordinates
                 r_nodes[coordinates] = Node(coordinates)
 
-    return [r_nodes, r_start, r_end]
+    return Maze(r_nodes, r_start, r_end)
 
 
-def get_final_path(p_maze_info):
+def get_final_path(p_maze):
     """
     Give the final path
 
-    :param p_maze_info: The maze information
+    :param p_maze: The maze information
 
     :return: The list of coordinates of the final path
     """
 
-    nodes, start, end = p_maze_info
-    current_pos = end
+    current_pos = p_maze.end
     final_path = []
 
-    while current_pos != start:
-        current_pos = nodes[current_pos].parent
+    while current_pos != p_maze.start:
+        current_pos = p_maze.nodes[current_pos].parent
         final_path.append(current_pos)
 
+    final_path.reverse()
+
     return final_path
-
-
-def print_solved_maze(p_maze, p_maze_info):
-    """
-    Print the solved maze
-
-    :param p_maze: The maze
-    :param p_maze_info: The maze information
-    """
-
-    nodes, start, end = p_maze_info
-    maze_string = ""
-    visited_nodes = get_nodes_by_status(nodes, Status.VISITED)
-
-    for y, line in enumerate(p_maze):
-        for x, number in enumerate(line):
-            tmp = "X " if number == 1 else "  "
-            if (x, y) == start:
-                tmp = "S "
-            elif (x, y) == end:
-                tmp = "E "
-            elif (x, y) in get_final_path(p_maze_info):
-                tmp = "o "
-
-            maze_string += tmp
-        maze_string += '\n'
-
-    print(maze_string)
 
 
 def get_neighbors(nodes, current_node):
@@ -180,44 +163,42 @@ def get_nodes_distance(coord_1, coord_2):
     return abs(coord_1[0] - coord_2[0]) + abs(coord_1[1] - coord_2[1])
 
 
-def solve_maze(current_pos, p_maze, maze_info):
+def solve_maze(current_pos, p_maze):
     """
     Solve the maze recursively
 
     :param current_pos: The current coordinates
     :param p_maze: The maze
-    :param maze_info: The maze information
     """
 
-    nodes, start, end = maze_info
     # If first occurrence
     if current_pos == 0:
-        solve_maze(start, p_maze, maze_info)
+        solve_maze(p_maze.start, p_maze)
         return
     # If the exit is found
-    elif current_pos == end:
-        print_solved_maze(p_maze, maze_info)
+    elif current_pos == p_maze.end:
+        p_maze.solution = get_final_path(p_maze)
         return
     # If no solution
     elif current_pos == -1:
         return
 
-    current_node = nodes[current_pos]
+    current_node = p_maze.nodes[current_pos]
     next_node = -1
     do_next = False
     current_node.status = Status.VISITED
 
     # Loop on neighboring nodes
-    for coord in get_neighbors(nodes, current_node):
-        node = nodes[coord]
+    for coord in get_neighbors(p_maze.nodes, current_node):
+        node = p_maze.nodes[coord]
         node.status = Status.CHECKED
 
-        tmp_cost = get_nodes_distance(node.coordinates, start)
+        tmp_cost = get_nodes_distance(node.coordinates, p_maze.start)
         if node.g_cost > tmp_cost:
             node.g_cost = tmp_cost
             node.parent = current_node.coordinates
 
-        tmp_cost = get_nodes_distance(node.coordinates, end)
+        tmp_cost = get_nodes_distance(node.coordinates, p_maze.end)
         if node.h_cost > tmp_cost:
             node.h_cost = tmp_cost
 
@@ -226,8 +207,8 @@ def solve_maze(current_pos, p_maze, maze_info):
 
     # Choose the next node
     max_f_cost = math.inf
-    for coord in get_nodes_by_status(nodes, Status.CHECKED):
-        node = nodes[coord]
+    for coord in get_nodes_by_status(p_maze.nodes, Status.CHECKED):
+        node = p_maze.nodes[coord]
         if node.f_cost < max_f_cost:
             do_next = True
         elif node.f_cost == max_f_cost and node.h_cost < next_node.h_cost:
@@ -240,7 +221,7 @@ def solve_maze(current_pos, p_maze, maze_info):
             next_node = node
 
     # Recursive call
-    solve_maze(next_node.coordinates, p_maze, maze_info)
+    solve_maze(next_node.coordinates, p_maze)
 
 
 def main():
@@ -252,16 +233,49 @@ def main():
 
     maze_file = open(maze_filename, 'r', encoding="utf-8")
 
-    print(maze_file.read())
-    maze_file.seek(0)
+    maze_array = maze_file_to_array(maze_file)
 
     # Needed for large maze
-    # sys.setrecursionlimit(10000)
+    sys.setrecursionlimit(10000)
 
-    maze = maze_file_to_array(maze_file)
-    solve_maze(0, maze, init_maze(maze))
+    pygame.init()
+    app = pygame.display.set_mode((1650, 1050))
+
+    wall = pygame.image.load("gui/grey.png").convert()
+    path = pygame.image.load("gui/light_grey.png").convert()
+    solution = pygame.image.load("gui/blue.png").convert()
+
+    size = 10
+    tmp = wall
+    for y, line in enumerate(maze_array):
+        for x, number in enumerate(line):
+            if number == 0:
+                tmp = path
+            elif number == 1:
+                tmp = wall
+
+            app.blit(tmp, (x*size, y*size))
+    pygame.display.flip()
+
+    end = False
+    while not end:
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                end = True
+            elif event.type == KEYDOWN:
+                if event.key == K_SPACE:
+
+                    maze = init_maze(maze_array)
+                    solve_maze(0, maze)
+
+                    for pos in maze.solution:
+                        app.blit(solution, (pos[0] * size, pos[1] * size))
+                        pygame.display.flip()
+                        pygame.time.delay(10)
+
+                    app.blit(solution, (maze.end[0] * size, maze.end[1] * size))
+                    pygame.display.flip()
 
 
 if __name__ == "__main__":
     main()
-
