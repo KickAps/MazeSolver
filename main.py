@@ -1,7 +1,10 @@
 import sys
 import os
+import threading
 from enum import Enum
 import math
+
+import psutil
 import pygame
 from pygame.locals import *
 
@@ -15,6 +18,7 @@ class Status(Enum):
 class Maze:
     def __init__(self, nodes, start, end):
         self.nodes = nodes
+        self.checkedNodes = [start]
         self.solution = []
         self.start = start
         self.end = end
@@ -78,11 +82,14 @@ def init_maze(p_maze):
                 # Define the start
                 if x == 0 or y == 0:
                     r_start = coordinates
+                    r_nodes[coordinates] = Node(coordinates)
                 # Define the end
                 elif x == width or y == height:
                     r_end = coordinates
-                # Instantiate nodes from coordinates
-                r_nodes[coordinates] = Node(coordinates)
+                    r_nodes[coordinates] = Node(coordinates)
+                else:
+                    # Instantiate nodes from coordinates
+                    r_nodes[coordinates] = 0
 
     return Maze(r_nodes, r_start, r_end)
 
@@ -125,29 +132,9 @@ def get_neighbors(nodes, current_node):
         if p in nodes:
             node = nodes[p]
             # If the neighboring node is not visited
-            if node.status != Status.VISITED:
-                neighbors.append(node.coordinates)
+            if node == 0 or node.status != Status.VISITED:
+                neighbors.append(p)
     return neighbors
-
-
-def get_nodes_by_status(nodes, status):
-    """
-    Filter the nodes by status
-
-    :param nodes: The nodes list
-    :param status: The status
-
-    :return: The list of nodes coordinates in the given status
-    """
-
-    filtered_nodes = []
-    for coord in nodes:
-        node = nodes[coord]
-        # Status filter
-        if node.status == status:
-            filtered_nodes.append(node.coordinates)
-
-    return filtered_nodes
 
 
 def get_nodes_distance(coord_1, coord_2):
@@ -163,7 +150,7 @@ def get_nodes_distance(coord_1, coord_2):
     return abs(coord_1[0] - coord_2[0]) + abs(coord_1[1] - coord_2[1])
 
 
-def solve_maze(current_pos, p_maze):
+def solve_maze(app, processing, size, current_pos, p_maze):
     """
     Solve the maze recursively
 
@@ -171,27 +158,31 @@ def solve_maze(current_pos, p_maze):
     :param p_maze: The maze
     """
 
-    # If first occurrence
-    if current_pos == 0:
-        solve_maze(p_maze.start, p_maze)
-        return
+    #print(current_pos)
+
+    app.blit(processing, (current_pos[0] * size, current_pos[1] * size))
+    pygame.display.flip()
+
     # If the exit is found
-    elif current_pos == p_maze.end:
+    if current_pos == p_maze.end:
         p_maze.solution = get_final_path(p_maze)
-        return
-    # If no solution
-    elif current_pos == -1:
         return
 
     current_node = p_maze.nodes[current_pos]
-    next_node = -1
-    do_next = False
+    next_node = p_maze.nodes[current_pos]
     current_node.status = Status.VISITED
+    p_maze.checkedNodes.remove(current_pos)
 
     # Loop on neighboring nodes
     for coord in get_neighbors(p_maze.nodes, current_node):
+        if p_maze.nodes[coord] == 0:
+            p_maze.nodes[coord] = Node(coord)
+
         node = p_maze.nodes[coord]
-        node.status = Status.CHECKED
+
+        if coord not in p_maze.checkedNodes:
+            node.status = Status.CHECKED
+            p_maze.checkedNodes.append(coord)
 
         tmp_cost = get_nodes_distance(node.coordinates, p_maze.start)
         if node.g_cost > tmp_cost:
@@ -207,7 +198,8 @@ def solve_maze(current_pos, p_maze):
 
     # Choose the next node
     max_f_cost = math.inf
-    for coord in get_nodes_by_status(p_maze.nodes, Status.CHECKED):
+    for coord in p_maze.checkedNodes:
+        do_next = False
         node = p_maze.nodes[coord]
         if node.f_cost < max_f_cost:
             do_next = True
@@ -220,8 +212,13 @@ def solve_maze(current_pos, p_maze):
             max_f_cost = node.f_cost
             next_node = node
 
+    # If no solution
+    if next_node == current_node:
+        print("No solution")
+        return
+
     # Recursive call
-    solve_maze(next_node.coordinates, p_maze)
+    solve_maze(app, processing, size, next_node.coordinates, p_maze)
 
 
 def main():
@@ -234,9 +231,10 @@ def main():
     maze_file = open(maze_filename, 'r', encoding="utf-8")
 
     maze_array = maze_file_to_array(maze_file)
+    maze = init_maze(maze_array)
 
     # Needed for large maze
-    sys.setrecursionlimit(10000)
+    sys.setrecursionlimit(100000)
 
     pygame.init()
     app = pygame.display.set_mode((1650, 1050))
@@ -244,6 +242,7 @@ def main():
     wall = pygame.image.load("gui/grey.png").convert()
     path = pygame.image.load("gui/light_grey.png").convert()
     solution = pygame.image.load("gui/blue.png").convert()
+    processing = pygame.image.load("gui/light_blue.png").convert()
 
     size = 10
     tmp = wall
@@ -257,21 +256,28 @@ def main():
             app.blit(tmp, (x*size, y*size))
     pygame.display.flip()
 
-    end = False
-    while not end:
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                end = True
-            elif event.type == KEYDOWN:
-                if event.key == K_SPACE:
+    del maze_array
+    del maze_file
+    del maze_filename
 
-                    maze = init_maze(maze_array)
-                    solve_maze(0, maze)
+    pygame.display.update()
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    pygame.event.clear()
+
+                    solve_maze(app, processing, size, maze.start, maze)
+                    print("ok")
 
                     for pos in maze.solution:
                         app.blit(solution, (pos[0] * size, pos[1] * size))
                         pygame.display.flip()
-                        pygame.time.delay(10)
+                        pygame.time.delay(2)
 
                     app.blit(solution, (maze.end[0] * size, maze.end[1] * size))
                     pygame.display.flip()
