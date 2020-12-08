@@ -91,6 +91,9 @@ def init_maze(p_maze):
                     # Instantiate nodes from coordinates
                     r_nodes[coordinates] = 0
 
+    r_nodes[r_start].g_cost = 0
+    r_nodes[r_start].h_cost = get_nodes_distance(r_start, r_end)
+    r_nodes[r_start].update_f_cost()
     return Maze(r_nodes, r_start, r_end)
 
 
@@ -169,6 +172,7 @@ def solve_maze(app, processing, size, current_pos, p_maze):
         return
 
     current_node = p_maze.nodes[current_pos]
+    #current_node.print_node()
     next_node = p_maze.nodes[current_pos]
     current_node.status = Status.VISITED
     p_maze.checkedNodes.remove(current_pos)
@@ -184,7 +188,7 @@ def solve_maze(app, processing, size, current_pos, p_maze):
             node.status = Status.CHECKED
             p_maze.checkedNodes.append(coord)
 
-        tmp_cost = get_nodes_distance(node.coordinates, p_maze.start)
+        tmp_cost = current_node.g_cost + 1
         if node.g_cost > tmp_cost:
             node.g_cost = tmp_cost
             node.parent = current_node.coordinates
@@ -237,7 +241,7 @@ def main():
     sys.setrecursionlimit(100000)
 
     pygame.init()
-    app = pygame.display.set_mode((1650, 1050))
+    app = pygame.display.set_mode((len(maze_array[0]) * 10, len(maze_array) * 10))
 
     wall = pygame.image.load("gui/grey.png").convert()
     path = pygame.image.load("gui/light_grey.png").convert()
